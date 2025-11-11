@@ -1,0 +1,73 @@
+# Hardened Docker Image for AI Trading Bot
+# Security-focused build with minimal attack surface
+
+# Use specific version (not latest)
+FROM python:3.10.12-slim AS builder
+
+# Build dependencies in separate stage
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# ============================================
+# Production stage
+# ============================================
+FROM python:3.10.12-slim
+
+# Labels for security scanning
+LABEL maintainer="trading-ops@example.com"
+LABEL description="AI Trading Bot - Hardened"
+LABEL version="1.0.0"
+LABEL security.scan="required"
+
+# Create non-root user with specific UID
+RUN groupadd -r -g 1000 trading && \
+    useradd -r -u 1000 -g trading -m -d /home/trading -s /sbin/nologin trading
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/trading/.local
+
+# Copy application code
+COPY --chown=trading:trading . /app
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/logs /app/models_saved /app/data && \
+    chown -R trading:trading /app && \
+    chmod 750 /app && \
+    chmod 770 /app/logs /app/models_saved /app/data
+
+# Set environment variables
+ENV PATH=/home/trading/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Switch to non-root user
+USER trading
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/healthz', timeout=5)" || exit 1
+
+# Expose ports (informational)
+EXPOSE 8000
+
+# Use exec form to ensure proper signal handling
+ENTRYPOINT ["python"]
+CMD ["main.py"]
+
+# Security: Read-only root filesystem
+# Mount writable volumes for logs and models
+# Example: docker run --read-only -v ./logs:/app/logs:rw

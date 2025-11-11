@@ -1,0 +1,238 @@
+# Circuit Breakers Configuration
+# Hard-enforced safety controls to halt trading under adverse conditions
+
+[circuit_breakers]
+
+# ========================================
+# C2.1: Intraday Drawdown Circuit Breaker
+# ========================================
+[circuit_breakers.drawdown]
+enabled = true
+threshold_pct = 3.0  # Halt if daily drawdown >= 3%
+measurement_window = "daily"  # Options: daily, weekly, monthly
+reset_time = "00:00:00"  # UTC time to reset daily counter
+
+# Actions
+action = "halt_trading"  # Options: halt_trading, reduce_size, close_positions
+notify = true
+require_manual_resume = true
+cooldown_minutes = 60  # Wait 60 minutes before allowing resume
+
+[circuit_breakers.drawdown.alerts]
+warning_threshold = 2.0  # Warning at 2%
+critical_threshold = 3.0  # Critical at 3%
+emergency_threshold = 5.0  # Emergency procedures at 5%
+
+# ========================================
+# C2.2: Consecutive Losses Circuit Breaker
+# ========================================
+[circuit_breakers.consecutive_losses]
+enabled = true
+max_consecutive_losses = 5
+action = "halt_trading"
+notify = true
+require_manual_resume = true
+cooldown_minutes = 120  # 2-hour cooldown
+
+# Progressive actions
+[circuit_breakers.consecutive_losses.progressive]
+3_losses = "reduce_size_50_pct"
+4_losses = "reduce_size_75_pct"
+5_losses = "halt_trading"
+
+# ========================================
+# C2.3: Volatility Spike Circuit Breaker
+# ========================================
+[circuit_breakers.volatility]
+enabled = true
+
+# Spread monitoring
+[circuit_breakers.volatility.spread]
+max_spread_bps = 50  # Halt if spread > 50 bps (0.5%)
+measurement_window = 10  # Check last 10 trades
+action = "pause_trading"
+resume_condition = "spread_normalized"
+normalization_threshold = 20  # Resume when spread < 20 bps
+
+# ATR volatility
+[circuit_breakers.volatility.atr]
+baseline_window = 20  # Use 20-period ATR as baseline
+spike_threshold = 2.5  # Halt if current ATR > 2.5x baseline
+expansion_threshold = 2.0  # Warning at 2x
+action = "pause_new_entries"  # Allow exits only
+resume_condition = "volatility_normalized"
+normalization_threshold = 1.5  # Resume when ATR < 1.5x baseline
+
+# Price movement
+[circuit_breakers.volatility.price_movement]
+max_price_change_pct = 10.0  # Halt if price moves >10% in one period
+window_periods = 1
+action = "halt_all_immediately"
+cooldown_minutes = 30
+
+# ========================================
+# C2.4: Latency Circuit Breaker
+# ========================================
+[circuit_breakers.latency]
+enabled = true
+
+# WebSocket lag
+[circuit_breakers.latency.websocket]
+max_lag_seconds = 5.0  # Halt if WS data delayed >5s
+check_interval_seconds = 1.0
+action = "pause_trading"
+resume_condition = "latency_normalized"
+cooldown_minutes = 5
+
+# Inference latency
+[circuit_breakers.latency.inference]
+max_p95_ms = 500  # Halt if p95 inference time >500ms
+max_p99_ms = 1000  # Emergency if p99 >1000ms
+measurement_window = 100  # Last 100 inferences
+action = "pause_new_entries"
+notify = true
+
+# Order execution latency
+[circuit_breakers.latency.execution]
+max_order_latency_ms = 2000  # Halt if order placement >2s
+max_fill_latency_ms = 5000  # Halt if order fill >5s
+action = "pause_trading"
+require_investigation = true
+
+# API rate limiting
+[circuit_breakers.latency.rate_limit]
+detect_rate_limit_errors = true
+action = "exponential_backoff"
+max_backoff_seconds = 300  # Max 5 minutes
+halt_on_persistent_limit = true
+
+# ========================================
+# C2.5: Manual Kill Switch
+# ========================================
+[circuit_breakers.kill_switch]
+enabled = true
+require_authentication = true  # Require confirmation
+require_reason = true  # Must provide reason
+
+# Kill switch modes
+[circuit_breakers.kill_switch.modes]
+immediate = "close_all_positions_and_halt"
+graceful = "stop_new_entries_close_on_targets"
+pause = "halt_new_entries_only"
+
+# Audit
+[circuit_breakers.kill_switch.audit]
+log_all_activations = true
+log_location = "logs/kill_switch_audit.log"
+notify_stakeholders = true
+require_postmortem = true
+
+# ========================================
+# System Health Monitoring
+# ========================================
+[circuit_breakers.system_health]
+enabled = true
+
+# Resource monitoring
+[circuit_breakers.system_health.resources]
+max_cpu_pct = 90.0
+max_memory_pct = 90.0
+max_disk_pct = 95.0
+check_interval_seconds = 30
+action = "alert_and_monitor"
+critical_action = "graceful_shutdown"
+
+# Connection health
+[circuit_breakers.system_health.connections]
+require_redis = true
+require_exchange_connection = true
+max_reconnection_attempts = 5
+action_on_connection_loss = "pause_trading"
+
+# Model health
+[circuit_breakers.system_health.models]
+check_prediction_variance = true
+variance_threshold = 3.0  # Halt if predictions 3x more volatile
+check_confidence_distribution = true
+min_avg_confidence = 0.4  # Alert if avg confidence <40%
+action = "notify_and_monitor"
+
+# ========================================
+# Exchange-Specific Breakers
+# ========================================
+[circuit_breakers.exchange]
+
+# Binance-specific
+[circuit_breakers.exchange.binance]
+detect_maintenance = true
+detect_system_errors = true
+detect_position_discrepancies = true
+reconciliation_frequency_minutes = 5
+
+action_on_maintenance = "halt_trading"
+action_on_error_spike = "pause_new_entries"
+action_on_discrepancy = "halt_and_investigate"
+
+# ========================================
+# Recovery & Resumption
+# ========================================
+[circuit_breakers.recovery]
+
+# Auto-recovery conditions
+[circuit_breakers.recovery.auto_resume]
+enabled = false  # Require manual resume by default
+conditions = [
+    "all_breakers_cleared",
+    "cooldown_elapsed",
+    "system_health_green"
+]
+
+# Manual resume
+[circuit_breakers.recovery.manual_resume]
+require_checklist = true
+checklist_items = [
+    "Verify breaker cause identified",
+    "Confirm conditions normalized",
+    "Review recent trades",
+    "Check system health",
+    "Verify risk limits reset"
+]
+
+# Progressive restart
+[circuit_breakers.recovery.progressive_restart]
+enabled = true
+step_1 = "resume_with_50_pct_size"
+step_2_after_minutes = 30
+step_2 = "resume_with_75_pct_size"
+step_3_after_minutes = 60
+step_3 = "resume_full_size"
+
+# ========================================
+# Notification Configuration
+# ========================================
+[circuit_breakers.notifications]
+
+# Telegram
+[circuit_breakers.notifications.telegram]
+enabled = true
+send_warnings = true
+send_breaker_activations = true
+send_recovery_notifications = true
+
+# Severity levels
+[circuit_breakers.notifications.severity]
+warning = "🟡 WARNING"
+critical = "🔴 CRITICAL"
+emergency = "🚨 EMERGENCY"
+recovery = "✅ RECOVERED"
+
+# ========================================
+# Metadata
+# ========================================
+[metadata]
+version = "1.0.0"
+last_updated = "2024-01-15"
+owner = "Risk Management & Trading Ops"
+review_frequency = "weekly"
+approved_by = []
+effective_date = "2024-01-15"

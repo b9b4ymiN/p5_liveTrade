@@ -1,0 +1,208 @@
+# Risk Management Policy
+# Complete risk controls for AI Trading Bot
+
+# Position Sizing Strategy
+position_sizing:
+  method: "fractional_kelly"  # Options: fractional_kelly, fixed_fraction, volatility_scaled
+  kelly_fraction: 0.5  # 50% of full Kelly (conservative)
+  max_position_pct: 0.20  # Max 20% of equity per position
+  min_position_value: 10.0  # Minimum $10 position
+
+  # Volatility scaling
+  volatility_scaling:
+    enabled: true
+    base_atr_window: 14
+    scale_factor: 1.5  # Position size = base_size / (1 + scale_factor * normalized_atr)
+    min_scale: 0.5  # Never reduce position below 50% of base
+    max_scale: 2.0  # Never increase position above 200% of base
+
+  # Risk per trade
+  risk_per_trade: 0.02  # Risk 2% of equity per trade
+  max_risk_per_trade: 0.05  # Absolute maximum 5%
+
+# Stop Loss & Take Profit
+exits:
+  # Stop Loss
+  stop_loss:
+    method: "atr_based"  # Options: atr_based, fixed_pct, trailing
+    atr_multiplier: 1.5  # SL = entry ± (1.5 × ATR)
+    min_distance_pct: 0.01  # Minimum 1% from entry
+    max_distance_pct: 0.05  # Maximum 5% from entry
+
+  # Take Profit
+  take_profit:
+    method: "risk_multiple"  # Options: risk_multiple, target_based, trailing
+    risk_multiple: 2.0  # TP = 2x risk distance
+    use_ml_target: true  # Use ML predicted target if available
+    ml_target_weight: 0.7  # 70% ML target, 30% risk_multiple
+
+  # Time-based exit
+  time_exit:
+    enabled: true
+    max_hold_periods: 48  # Exit after 48 periods (240 minutes = 4 hours on 5m)
+    check_profitability: true  # Only apply if position is profitable
+
+  # Volatility expansion exit
+  volatility_exit:
+    enabled: true
+    expansion_threshold: 2.0  # Exit if ATR increases 2x from entry
+    contraction_threshold: 0.5  # Consider exit if ATR drops to 50%
+
+# Fees & Slippage Modeling
+execution_costs:
+  # Trading fees (Binance Futures with BNB discount)
+  maker_fee: 0.0002  # 0.02% maker
+  taker_fee: 0.0004  # 0.04% taker
+  assumed_fee: 0.0004  # Conservative: assume taker fee
+
+  # Slippage model
+  slippage:
+    model: "market_impact"  # Options: fixed, market_impact, volatility_based
+    base_slippage_bps: 5  # Base 5 bps (0.05%)
+    volatility_multiplier: 2.0  # Increase with volatility
+    size_impact_factor: 0.0001  # Additional slippage per $1000 position
+
+  # Expected value check
+  min_expected_value: 0.001  # Require minimum 0.1% edge after costs
+
+  # Total cost estimate
+  total_cost_estimate:
+    entry_cost: 0.0004  # Fee
+    exit_cost: 0.0004  # Fee
+    entry_slippage: 0.0005  # 0.05%
+    exit_slippage: 0.0005  # 0.05%
+    total: 0.0018  # 0.18% round-trip
+
+# Position Limits
+limits:
+  # Per position
+  max_position_value_usd: 10000  # Never exceed $10k in single position
+  max_leverage: 5  # Maximum 5x leverage
+  current_leverage: 3  # Default operating leverage
+
+  # Portfolio
+  max_total_exposure: 0.50  # Max 50% of equity deployed
+  max_positions: 1  # Single position strategy
+
+  # Daily limits
+  max_trades_per_day: 20
+  max_daily_loss_pct: 0.03  # 3% daily loss limit
+  max_daily_volume: 50000  # Max $50k daily volume
+
+# Risk Monitoring
+monitoring:
+  # Drawdown tracking
+  track_drawdown: true
+  drawdown_window: "inception"  # Options: daily, weekly, inception
+  max_drawdown_alert: 0.15  # Alert at 15% DD
+  max_drawdown_halt: 0.25  # Halt at 25% DD
+
+  # Performance tracking
+  rolling_sharpe_window: 30  # 30-day rolling Sharpe
+  min_acceptable_sharpe: 1.5
+
+  # Position health
+  check_liquidation_distance: true
+  min_liquidation_distance: 0.15  # 15% minimum
+
+  # Consecutive performance
+  max_consecutive_losses: 5
+  min_consecutive_wins_to_increase_size: 10
+
+# Emergency Procedures
+emergency:
+  # Auto-exit conditions
+  auto_exit_conditions:
+    - condition: "liquidation_distance < 0.20"
+      action: "close_position"
+      reason: "Approaching liquidation"
+
+    - condition: "daily_loss >= 0.03"
+      action: "close_all_and_halt"
+      reason: "Daily loss limit reached"
+
+    - condition: "consecutive_losses >= 5"
+      action: "halt_trading"
+      reason: "Max consecutive losses"
+
+    - condition: "position_age > 48_periods AND unrealized_pnl < 0"
+      action: "close_position"
+      reason: "Time stop on losing trade"
+
+  # Manual override
+  allow_manual_override: true
+  require_two_factor_auth: false  # Set true in production
+  log_all_overrides: true
+
+# Stress Scenarios
+stress_scenarios:
+  # Test position sizing under extreme conditions
+  scenarios:
+    - name: "High Volatility"
+      atr_multiplier: 3.0
+      expected_size_reduction: 0.67  # 33% reduction
+
+    - name: "Low Volatility"
+      atr_multiplier: 0.5
+      expected_size_increase: 1.5  # 50% increase (capped)
+
+    - name: "Near Daily Loss Limit"
+      current_loss: 0.025  # 2.5%
+      expected_behavior: "Reduce size or halt"
+
+    - name: "Consecutive Losses"
+      losses: 4
+      expected_behavior: "Reduce size, increase caution"
+
+# Backtesting Adjustments
+backtesting:
+  # Apply realistic costs
+  include_fees: true
+  include_slippage: true
+  slippage_model: "volatility_based"
+
+  # Conservative assumptions
+  assume_worse_fills: true
+  partial_fills_rate: 0.05  # 5% of orders partially filled
+
+  # Market impact
+  model_market_impact: true
+  impact_threshold_usd: 1000  # Model impact for positions > $1k
+
+# Reporting
+reporting:
+  # Real-time metrics
+  track_metrics:
+    - "sharpe_ratio"
+    - "sortino_ratio"
+    - "max_drawdown"
+    - "win_rate"
+    - "profit_factor"
+    - "average_trade_duration"
+    - "cost_to_profit_ratio"
+
+  # Alerts
+  alert_conditions:
+    - metric: "sharpe_ratio"
+      threshold: 1.0
+      direction: "below"
+      action: "notify"
+
+    - metric: "max_drawdown"
+      threshold: 0.20
+      direction: "above"
+      action: "notify_urgent"
+
+    - metric: "cost_to_profit_ratio"
+      threshold: 0.5
+      direction: "above"
+      action: "review_strategy"
+
+# Version & Metadata
+metadata:
+  version: "1.0.0"
+  last_updated: "2024-01-15"
+  owner: "Risk Management"
+  review_frequency: "monthly"
+  approved_by: []
+  effective_date: "2024-01-15"
