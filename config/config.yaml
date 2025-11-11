@@ -1,0 +1,76 @@
+# Phase 5 Live Trading Bot Configuration
+
+# Trading Symbol
+symbol: "SOLUSDT"
+timeframe: "5m"
+check_interval: 300  # seconds (5 minutes)
+
+# Initial Capital
+initial_balance: 2000
+leverage: 3
+max_leverage: 5
+
+# Binance API
+binance:
+  api_key: ${BINANCE_API_KEY}
+  api_secret: ${BINANCE_API_SECRET}
+  testnet: true  # Set to false for live trading
+
+# Database
+database:
+  host: localhost
+  port: 5432
+  database: trading
+  user: trader
+  password: ${DB_PASSWORD}
+
+# Redis
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  decode_responses: true
+
+# Model Paths
+models:
+  ensemble_path: "./models_saved/ensemble_model.pkl"
+  rl_agent_path: "./models_saved/rl_agent.zip"
+  xgboost_path: "./models_saved/xgboost_classifier.pkl"
+  lstm_path: "./models_saved/lstm_model.h5"
+
+# Risk Management
+risk:
+  max_position_size: 0.2  # 20% of equity
+  risk_per_trade: 0.02    # 2% risk per trade
+  max_daily_loss: 0.03    # 3% daily loss limit
+  max_trades_per_day: 20
+  max_consecutive_losses: 5
+  min_liquidation_distance: 0.15  # 15%
+  stop_loss_atr_multiplier: 1.5
+  take_profit_r_multiple: 2.0
+
+# Telegram Alerts
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  enabled: true
+
+# Online Learning
+online_learning:
+  enabled: true
+  update_interval_hours: 24
+  min_trades_for_update: 100
+  validation_threshold: 1.05  # New model must be 5% better
+
+# Monitoring
+monitoring:
+  dashboard_port: 8501
+  log_level: INFO
+  log_file: "./logs/trading_bot.log"
+
+# Safety Controls
+safety:
+  kill_switch_enabled: true
+  paper_trading_mode: true  # Start with paper trading
+  max_drawdown_percent: 20
+  emergency_exit_on_error: true
